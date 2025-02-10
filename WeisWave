@@ -1,0 +1,72 @@
+import numpy as np
+import pandas as pd
+
+def calculate_weis_wave(df, pullback=2):
+    # Initialize columns
+    df['mov'] = 0
+    df['trend'] = 0
+    df['wave'] = 0.0
+    df['vol'] = 0.0
+    df['up'] = 0.0
+    df['dn'] = 0.0
+    df['opp'] = 0.0
+    df['tempvolup'] = 0.0
+    df['tempvoldown'] = 0.0
+    df['tvolup'] = 0.0
+    df['tvoldown'] = 0.0
+    df['volumeup'] = 0.0
+    df['volumedn'] = 0.0
+    
+    # Trend Detection (mov)
+    df['mov'] = np.where(df['close'] > df['close'].shift(1), 1, np.where(df['close'] < df['close'].shift(1), -1, 0))
+    
+    # Trend Tracking (trend)
+    df['trend'] = np.where((df['mov'] != 0) & (df['mov'] != df['mov'].shift(1)), df['mov'], df['trend'].shift(1))
+    
+    # Trend check (isTrending)
+    is_trending = (df['close'].diff(pullback).abs() > 0)
+    
+    # Wave Calculation
+    df['wave'] = np.where((df['trend'] != df['wave'].shift(1)) & is_trending, df['trend'], df['wave'].shift(1))
+    
+    # Volume Calculation
+    df['vol'] = np.where(df['wave'] == df['wave'].shift(1), df['vol'].shift(1) + df['volume'], df['volume'])
+    
+    # Volume Up and Down
+    df['up'] = np.where(df['wave'] == 1, df['vol'], 0)
+    df['dn'] = np.where(df['wave'] == -1, -df['vol'], df['vol'])
+    
+    # Opposite Volume Calculation
+    df['opp'] = 0.0  # Assuming calculation for 'opp' is based on the reversal conditions
+    
+    # Volume accumulation
+    df['tempvolup'] = np.where(df['opp'] == 1, df['volume'], np.where(df['opp'] > 1, df['volume'] + df['tempvolup'].shift(1), 0))
+    df['tempvoldown'] = np.where(df['opp'] == -1, df['volume'], np.where(df['opp'] < -1, df['volume'] + df['tempvoldown'].shift(1), 0))
+    
+    df['tvolup'] = np.where(df['wave'] != df['wave'].shift(1), df['tempvolup'].shift(1), np.nan)
+    df['tvoldown'] = np.where(df['wave'] != df['wave'].shift(1), df['tempvoldown'].shift(1), np.nan)
+    
+    # Volume up and down
+    df['volumeup'] = np.where((df['wave'] != df['wave'].shift(1)) & (df['tvolup'] > 0), df['tvolup'] + df['volume'], df['volume'])
+    df['volumedn'] = np.where((df['wave'] != df['wave'].shift(1)) & (df['tvoldown'] > 0), df['tvoldown'] + df['volume'], df['volume'])
+    
+    # Identifying trend continuation and switching conditions
+    df['cd'] = ((df['wave'] == df['wave'].shift(1)) & (df['wave'] == 1) & (df['opp'] < 0))
+    df['cu'] = ((df['wave'] == df['wave'].shift(1)) & (df['wave'] == -1) & (df['opp'] > 0))
+    df['su'] = ((df['wave'] == df['wave'].shift(1)) & (df['wave'] == 1) & (df['opp'] == 0))
+    df['sd'] = ((df['wave'] == df['wave'].shift(1)) & (df['wave'] == -1) & (df['opp'] == 0))
+    
+    df['uc'] = (df['wave'] == df['wave'].shift(1)) & df['cd'].shift(1) & df['su']
+    df['dc'] = (df['wave'] == df['wave'].shift(1)) & df['cu'].shift(1) & df['sd']
+    df['ds'] = (df['wave'] != df['wave'].shift(1)) & df['cu'].shift(1) & df['su']
+    df['us'] = (df['wave'] != df['wave'].shift(1)) & df['cd'].shift(1) & df['sd']
+    
+    # Color Assignment (for visualization if needed)
+    df['col'] = np.where(df['ds'], 'green', np.where(df['uc'], 'green', np.where(df['us'], 'red', np.where(df['dc'], 'red', np.nan))))
+    
+    return df[['wave', 'volumeup', 'volumedn', 'uc', 'dc', 'ds', 'us', 'col']]
+
+# Example Usage:
+# Assuming df is a pandas DataFrame with 'close' and 'volume' columns (e.g., OHLCV data)
+# df = pd.read_csv('your_data.csv')
+# df = calculate_weis_wave(df)
